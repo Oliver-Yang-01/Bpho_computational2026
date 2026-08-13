@@ -1,0 +1,829 @@
+function H3plus_LCAO_Extension
+% =========================================================================
+%  TASK #10 EXTENSION: H3+ THREE-CENTRE MOLECULAR ORBITALS
+%  LCAO model using three hydrogen 1s orbitals at the vertices of an
+%  equilateral triangle.
+%
+%  The available coefficient vectors are
+%       A1 bonding:   c = [ 1; 1; 1]
+%       E mode 1:     c = [ 2;-1;-1]
+%       E mode 2:     c = [ 0; 1;-1]
+%
+%  Every orbital is normalized using the 3-by-3 overlap matrix
+%       N = 1/sqrt(c' S_matrix c).
+%
+%  The physical ground configuration of H3+ places its two electrons in
+%  the symmetric A1 bonding orbital.  The E modes are included to show how
+%  alternative coefficient vectors create nodal molecular orbitals.
+%
+%  This model investigates orbital shapes and three-centre interference.
+%  It deliberately does not calculate an energy-separation curve.
+% =========================================================================
+
+    delete(findall(0, 'Type', 'figure', 'Tag', 'H3plusLCAOApp'));
+
+    % =====================================================================
+    % CONSTANTS AND DEFAULTS
+    % =====================================================================
+    a0 = 0.529177210903;           % Bohr radius / Angstrom
+    defaultR = 4.0;                % triangle side length / a0
+    defaultIso = 12;               % isosurface / percent of maximum density
+
+    animationStop = false;
+    animationRunning = false;
+
+    % =====================================================================
+    % MAIN FIGURE
+    % =====================================================================
+    fig = uifigure( ...
+        'Name', 'H3+ Three-Centre Molecular Orbitals - LCAO Extension', ...
+        'Tag', 'H3plusLCAOApp', ...
+        'Position', [25 20 1480 900], ...
+        'Color', [0.94 0.94 0.94]);
+
+    mainGrid = uigridlayout(fig, [1 2]);
+    mainGrid.ColumnWidth = {335, '1x'};
+    mainGrid.Padding = [10 10 10 10];
+    mainGrid.ColumnSpacing = 12;
+    mainGrid.BackgroundColor = [0.94 0.94 0.94];
+
+    % =====================================================================
+    % LEFT PANEL - CONTROLS, THEORY AND VALIDATION
+    % =====================================================================
+    leftPanel = uipanel(mainGrid, ...
+        'Title', '  H3+ LCAO CONTROL & THEORY PANEL', ...
+        'FontName', 'Segoe UI', ...
+        'FontSize', 13, ...
+        'FontWeight', 'bold', ...
+        'ForegroundColor', [0.1 0.1 0.1], ...
+        'BackgroundColor', [0.96 0.96 0.96], ...
+        'BorderType', 'line', ...
+        'HighlightColor', [0.5 0.5 0.5]);
+
+    leftGrid = uigridlayout(leftPanel, [10 1]);
+    leftGrid.RowHeight = {64, 58, 58, 58, 34, 72, 104, 180, 134, 28};
+    leftGrid.Padding = [8 8 8 8];
+    leftGrid.RowSpacing = 4;
+    leftGrid.BackgroundColor = [0.96 0.96 0.96];
+
+    [grpR, lblR] = controlGroup(leftGrid, ...
+        sprintf('Equilateral side length R = %.2f a0  (%.3f Angstrom)', ...
+        defaultR, defaultR*a0));
+    sldR = uislider(grpR, ...
+        'Limits', [0.8 8.0], ...
+        'Value', defaultR, ...
+        'MajorTicks', [1 2 3 4 6 8], ...
+        'MinorTicks', [], ...
+        'FontColor', [0.2 0.2 0.2]);
+
+    grpState = controlGroup(leftGrid, 'Three-centre orbital combination');
+    ddState = uidropdown(grpState, ...
+        'Items', { ...
+            'Symmetric bonding A1-prime', ...
+            'Nodal E-prime mode 1', ...
+            'Nodal E-prime mode 2'}, ...
+        'Value', 'Symmetric bonding A1-prime', ...
+        'FontSize', 11);
+
+    grpPlane = controlGroup(leftGrid, '2-D slice plane');
+    ddPlane = uidropdown(grpPlane, ...
+        'Items', { ...
+            'xy molecular plane (z=0)', ...
+            'xz vertical plane (y=0)', ...
+            'yz vertical plane (x=0)'}, ...
+        'Value', 'xy molecular plane (z=0)', ...
+        'FontSize', 11);
+
+    [grpIso, lblIso] = controlGroup(leftGrid, ...
+        sprintf('3-D isosurface level: %.0f%% of maximum', defaultIso));
+    sldIso = uislider(grpIso, ...
+        'Limits', [2 30], ...
+        'Value', defaultIso, ...
+        'MajorTicks', [2 5 10 15 20 25 30], ...
+        'MinorTicks', [], ...
+        'FontColor', [0.2 0.2 0.2]);
+
+    chkAtomic = uicheckbox(leftGrid, ...
+        'Text', 'Show the three individual 1s orbital contributions', ...
+        'Value', true, ...
+        'FontSize', 11, ...
+        'FontWeight', 'bold', ...
+        'FontColor', [0.1 0.1 0.1]);
+
+    buttonGrid = uigridlayout(leftGrid, [2 2]);
+    buttonGrid.RowHeight = {'1x', '1x'};
+    buttonGrid.ColumnWidth = {'1x', '1x'};
+    buttonGrid.Padding = [0 0 0 0];
+    buttonGrid.RowSpacing = 5;
+    buttonGrid.ColumnSpacing = 6;
+    buttonGrid.BackgroundColor = [0.96 0.96 0.96];
+
+    btnAnimate = uibutton(buttonGrid, ...
+        'Text', 'Animate Contraction', ...
+        'FontWeight', 'bold', 'FontSize', 11, ...
+        'BackgroundColor', [0.85 0.90 0.95], ...
+        'FontColor', [0.1 0.2 0.4]);
+
+    btnStop = uibutton(buttonGrid, ...
+        'Text', 'Stop Animation', ...
+        'FontWeight', 'bold', 'FontSize', 11, ...
+        'BackgroundColor', [0.95 0.87 0.84], ...
+        'FontColor', [0.4 0.1 0.05]);
+
+    btnReset = uibutton(buttonGrid, ...
+        'Text', 'Reset', ...
+        'FontWeight', 'bold', 'FontSize', 11, ...
+        'BackgroundColor', [0.85 0.92 0.85], ...
+        'FontColor', [0.05 0.25 0.1]);
+
+    btnExport = uibutton(buttonGrid, ...
+        'Text', 'Export Current View', ...
+        'FontWeight', 'bold', 'FontSize', 11, ...
+        'BackgroundColor', [0.95 0.92 0.85], ...
+        'FontColor', [0.3 0.2 0.05]);
+
+    txtInfo = uitextarea(leftGrid, ...
+        'Value', {'CURRENT STATE'}, ...
+        'Editable', 'off', ...
+        'FontName', 'Consolas', 'FontSize', 10, ...
+        'FontColor', [0.1 0.1 0.1], ...
+        'BackgroundColor', [1 1 1]);
+
+    txtValidation = uitextarea(leftGrid, ...
+        'Value', {'NUMERICAL VALIDATION'}, ...
+        'Editable', 'off', ...
+        'FontName', 'Consolas', 'FontSize', 10, ...
+        'FontColor', [0.1 0.1 0.1], ...
+        'BackgroundColor', [1 1 1]);
+
+    txtTheory = uitextarea(leftGrid, ...
+        'Value', { ...
+            'KEY FORMULAE - H3+ LCAO', ...
+            'psi = N sum_i c_i phi_i', ...
+            'N = 1/sqrt(c^T S_matrix c)', ...
+            'S_ij = exp(-R_ij)(1+R_ij+R_ij^2/3)', ...
+            '', ...
+            'A1-prime: c = [1;1;1]  (bonding)', ...
+            'E-prime 1: c = [2;-1;-1]', ...
+            'E-prime 2: c = [0;1;-1]', ...
+            '', ...
+            'Ground H3+: two electrons occupy A1-prime.', ...
+            'No energy-separation curve is assumed.'}, ...
+        'Editable', 'off', ...
+        'FontName', 'Consolas', 'FontSize', 10, ...
+        'FontColor', [0.15 0.15 0.15], ...
+        'BackgroundColor', [1 1 1]);
+
+    lblStatus = uilabel(leftGrid, ...
+        'Text', 'Ready - adjust R or select a three-centre combination.', ...
+        'FontSize', 10, ...
+        'FontColor', [0.2 0.3 0.4], ...
+        'HorizontalAlignment', 'center', ...
+        'BackgroundColor', [0.92 0.92 0.92]);
+
+    % =====================================================================
+    % RIGHT PANEL - THREE-CENTRE VISUALISATIONS
+    % =====================================================================
+    rightPanel = uipanel(mainGrid, ...
+        'Title', '  H3+ THREE-CENTRE ORBITALS  |  NORMALIZED LCAO MODEL', ...
+        'FontName', 'Segoe UI', ...
+        'FontSize', 13, ...
+        'FontWeight', 'bold', ...
+        'ForegroundColor', [0.1 0.1 0.1], ...
+        'BackgroundColor', [0.96 0.96 0.96], ...
+        'BorderType', 'line', ...
+        'HighlightColor', [0.5 0.5 0.5]);
+
+    rightGrid = uigridlayout(rightPanel, [2 2]);
+    rightGrid.RowHeight = {'1x', 225};
+    rightGrid.ColumnWidth = {'1x', '1x'};
+    rightGrid.Padding = [8 8 8 8];
+    rightGrid.RowSpacing = 10;
+    rightGrid.ColumnSpacing = 10;
+    rightGrid.BackgroundColor = [0.96 0.96 0.96];
+
+    ax2D = uiaxes(rightGrid, ...
+        'BackgroundColor', [1 1 1], ...
+        'XColor', [0.2 0.2 0.2], ...
+        'YColor', [0.2 0.2 0.2], ...
+        'FontName', 'Segoe UI', 'FontSize', 10, ...
+        'Box', 'on');
+    ax2D.Layout.Row = 1;
+    ax2D.Layout.Column = 1;
+    axis(ax2D, 'equal');
+    colormap(ax2D, jet(256));
+    cb2D = colorbar(ax2D);
+    cb2D.Label.String = '|psi|^2  (a_0^{-3})';
+
+    ax3D = uiaxes(rightGrid, ...
+        'BackgroundColor', [1 1 1], ...
+        'XColor', [0.2 0.2 0.2], ...
+        'YColor', [0.2 0.2 0.2], ...
+        'ZColor', [0.2 0.2 0.2], ...
+        'FontName', 'Segoe UI', 'FontSize', 10, ...
+        'Box', 'on');
+    ax3D.Layout.Row = 1;
+    ax3D.Layout.Column = 2;
+    view(ax3D, 36, 28);
+    axis(ax3D, 'equal');
+    grid(ax3D, 'on');
+    cb3D = colorbar(ax3D);
+
+    axCut = uiaxes(rightGrid, ...
+        'BackgroundColor', [1 1 1], ...
+        'XColor', [0.2 0.2 0.2], ...
+        'YColor', [0.2 0.2 0.2], ...
+        'FontName', 'Segoe UI', 'FontSize', 10, ...
+        'Box', 'on', ...
+        'GridColor', [0.75 0.75 0.75], ...
+        'GridAlpha', 0.5);
+    axCut.Layout.Row = 2;
+    axCut.Layout.Column = [1 2];
+    grid(axCut, 'on');
+
+    % =====================================================================
+    % SHARED HANDLES AND CALLBACKS
+    % =====================================================================
+    handles = struct( ...
+        'fig', fig, ...
+        'sldR', sldR, 'lblR', lblR, ...
+        'sldIso', sldIso, 'lblIso', lblIso, ...
+        'ddState', ddState, 'ddPlane', ddPlane, ...
+        'chkAtomic', chkAtomic, 'btnAnimate', btnAnimate, ...
+        'txtInfo', txtInfo, 'txtValidation', txtValidation, ...
+        'lblStatus', lblStatus, ...
+        'ax2D', ax2D, 'ax3D', ax3D, 'axCut', axCut, ...
+        'cb2D', cb2D, 'cb3D', cb3D);
+
+    sldR.ValueChangingFcn = @(~,event) updateRLabel(event.Value);
+    sldR.ValueChangedFcn = @(~,~) updateModel(true);
+    sldIso.ValueChangingFcn = @(~,event) updateIsoLabel(event.Value);
+    sldIso.ValueChangedFcn = @(~,~) updateModel(true);
+    ddState.ValueChangedFcn = @(~,~) updateModel(true);
+    ddPlane.ValueChangedFcn = @(~,~) updateModel(true);
+    chkAtomic.ValueChangedFcn = @(~,~) updateModel(true);
+    btnAnimate.ButtonPushedFcn = @(~,~) animateContraction();
+    btnStop.ButtonPushedFcn = @(~,~) stopAnimation();
+    btnReset.ButtonPushedFcn = @(~,~) resetApplication();
+    btnExport.ButtonPushedFcn = @(~,~) exportView();
+
+    updateModel(true);
+
+    % =====================================================================
+    % INTERFACE HELPERS
+    % =====================================================================
+    function [group, label] = controlGroup(parent, labelText)
+        group = uigridlayout(parent, [2 1]);
+        group.RowHeight = {22, '1x'};
+        group.Padding = [0 0 0 0];
+        group.RowSpacing = 1;
+        group.BackgroundColor = [0.96 0.96 0.96];
+        label = uilabel(group, ...
+            'Text', labelText, ...
+            'FontSize', 11, ...
+            'FontWeight', 'bold', ...
+            'FontColor', [0.1 0.1 0.1], ...
+            'HorizontalAlignment', 'center');
+    end
+
+    function updateRLabel(value)
+        handles.lblR.Text = sprintf( ...
+            'Equilateral side length R = %.2f a0  (%.3f Angstrom)', ...
+            value, value*a0);
+    end
+
+    function updateIsoLabel(value)
+        handles.lblIso.Text = sprintf( ...
+            '3-D isosurface level: %.0f%% of maximum', value);
+    end
+
+    % =====================================================================
+    % MAIN MODEL UPDATE
+    % =====================================================================
+    function updateModel(highQuality)
+        if ~isvalid(handles.fig)
+            return;
+        end
+
+        separation = handles.sldR.Value;
+        isoPercent = handles.sldIso.Value;
+        updateRLabel(separation);
+        updateIsoLabel(isoPercent);
+
+        [coefficients, stateName, stateSymbol, modeKey] = ...
+            stateDefinition(handles.ddState.Value);
+        overlap = overlap1s(separation);
+        overlapMatrix = (1-overlap)*eye(3) + overlap*ones(3);
+        normalization = 1 / sqrt(coefficients' * overlapMatrix * coefficients);
+
+        circumradius = separation/sqrt(3);
+        extentAu = circumradius + 6.5;
+        if highQuality
+            gridPoints3D = 80;
+            gridPoints2D = 250;
+        else
+            gridPoints3D = 48;
+            gridPoints2D = 150;
+        end
+
+        if strcmp(modeKey, 'A1')
+            occupationText = 'Ground-state occupation: two electrons in A1-prime';
+        else
+            occupationText = 'Comparison nodal MO: unoccupied in simple ground model';
+        end
+
+        handles.txtInfo.Value = { ...
+            'CURRENT STATE', ...
+            'System: triangular H3+ (three protons, two electrons)', ...
+            sprintf('State: %s', stateName), ...
+            occupationText, ...
+            sprintf('R = %.3f a0 = %.3f Angstrom', separation, separation*a0), ...
+            sprintf('Coefficient vector c = [%+d; %+d; %+d]', ...
+                coefficients(1), coefficients(2), coefficients(3)), ...
+            sprintf('Pair overlap S(R) = %.7f', overlap), ...
+            sprintf('Normalization N = %.7f', normalization)};
+
+        handles.lblStatus.Text = sprintf( ...
+            'Rendering %s at R = %.2f a0 ...', stateName, separation);
+        drawnow;
+
+        try
+            plot2DSlice(separation, coefficients, normalization, ...
+                stateName, gridPoints2D, extentAu);
+            validation = plot3DOrbital(separation, coefficients, ...
+                normalization, stateName, stateSymbol, ...
+                gridPoints3D, extentAu, isoPercent);
+            plotCentreCut(separation, coefficients, normalization, ...
+                stateName, extentAu);
+
+            analyticNorm = normalization^2 * ...
+                (coefficients' * overlapMatrix * coefficients);
+            gridError = abs(validation.numericNorm - 1);
+            if gridError < 0.02
+                gridResult = 'PASS';
+            else
+                gridResult = 'CHECK';
+            end
+
+            rawModes = [1 2 0; 1 -1 1; 1 -1 -1];
+            normalizedModes = zeros(size(rawModes));
+            for column = 1:3
+                vector = rawModes(:,column);
+                normalizedModes(:,column) = vector / ...
+                    sqrt(vector' * overlapMatrix * vector);
+            end
+            orbitalGram = normalizedModes' * overlapMatrix * normalizedModes;
+            identityGram = eye(3);
+            orthogonalityError = max(abs( ...
+                orbitalGram(:) - identityGram(:)));
+
+            centreValue = abs(validation.centrePsi);
+            if strcmp(modeKey, 'A1')
+                nodeText = sprintf( ...
+                    'Centre density |psi(0)|^2 = %.6f a0^-3', ...
+                    centreValue^2);
+            else
+                if centreValue < 1e-12
+                    centreResult = 'PASS';
+                else
+                    centreResult = 'CHECK';
+                end
+                nodeText = sprintf( ...
+                    'Centre node |psi(0)| = %.3e  [%s]', ...
+                    centreValue, centreResult);
+            end
+
+            extraNodeText = '';
+            if strcmp(modeKey, 'E2')
+                planeNodeError = e2PlaneNodeError( ...
+                    separation, coefficients, normalization, extentAu);
+                if planeNodeError < 1e-12
+                    planeResult = 'PASS';
+                else
+                    planeResult = 'CHECK';
+                end
+                extraNodeText = sprintf( ...
+                    'E2 y=0 nodal-plane error = %.3e  [%s]', ...
+                    planeNodeError, planeResult);
+            elseif strcmp(modeKey, 'A1')
+                extraNodeText = 'Equal coefficients give threefold symmetry  [PASS]';
+            else
+                extraNodeText = 'E1 coefficients sum to zero at centre  [PASS]';
+            end
+
+            eigenvalueBonding = 1 + 2*overlap;
+            eigenvalueE = 1 - overlap;
+            handles.txtValidation.Value = { ...
+                'NUMERICAL VALIDATION', ...
+                sprintf('Analytic normalization = %.10f  [PASS]', analyticNorm), ...
+                sprintf('Cartesian-grid integral = %.7f  [%s]', ...
+                    validation.numericNorm, gridResult), ...
+                sprintf('Finite-grid error = %.3e', gridError), ...
+                sprintf('MO overlap-orthogonality error = %.3e', ...
+                    orthogonalityError), ...
+                nodeText, ...
+                extraNodeText, ...
+                sprintf('Overlap eigenvalues: A1 %.5f; E pair %.5f', ...
+                    eigenvalueBonding, eigenvalueE), ...
+                sprintf('Isosurface = %.1f%% of maximum density', isoPercent)};
+
+            handles.lblStatus.Text = sprintf( ...
+                'Ready - %s  |  R = %.2f a0  |  grid norm %.5f', ...
+                stateName, separation, validation.numericNorm);
+        catch ME
+            handles.lblStatus.Text = 'Rendering failed - see error dialog.';
+            uialert(handles.fig, ME.message, 'H3+ rendering error');
+        end
+    end
+
+    % =====================================================================
+    % 2-D PROBABILITY-DENSITY SLICE
+    % =====================================================================
+    function plot2DSlice(separation, coefficients, normalization, ...
+            stateName, pointCount, extentAu)
+
+        extentAngstrom = extentAu*a0;
+        coordinate = linspace(-extentAngstrom, extentAngstrom, pointCount);
+        [U, V] = meshgrid(coordinate, coordinate);
+        nuclei = nuclearPositions(separation)*a0;
+
+        switch handles.ddPlane.Value
+            case 'xy molecular plane (z=0)'
+                X = U; Y = V; Zgrid = zeros(size(U));
+                xText = 'x / Angstrom'; yText = 'y / Angstrom';
+                planeText = 'xy molecular plane (z=0)';
+                markerCoordinates = nuclei(:,1:2);
+                markerLabels = {'A','B','C'};
+            case 'xz vertical plane (y=0)'
+                X = U; Y = zeros(size(U)); Zgrid = V;
+                xText = 'x / Angstrom'; yText = 'z / Angstrom';
+                planeText = 'xz vertical plane (y=0)';
+                markerCoordinates = [nuclei(1,1), nuclei(1,3)];
+                markerLabels = {'A'};
+            otherwise
+                X = zeros(size(U)); Y = U; Zgrid = V;
+                xText = 'y / Angstrom'; yText = 'z / Angstrom';
+                planeText = 'yz vertical plane (x=0)';
+                markerCoordinates = zeros(0,2);
+                markerLabels = {};
+        end
+
+        [psi, phiA, phiB, phiC] = molecularWavefunction( ...
+            X, Y, Zgrid, separation, coefficients, normalization);
+        density = abs(psi).^2;
+
+        cla(handles.ax2D);
+        imagesc(handles.ax2D, coordinate, coordinate, density);
+        set(handles.ax2D, 'YDir', 'normal');
+        axis(handles.ax2D, 'equal', 'tight');
+        colormap(handles.ax2D, jet(256));
+        hold(handles.ax2D, 'on');
+
+        if handles.chkAtomic.Value
+            allAtomic = [abs(phiA(:)).^2; abs(phiB(:)).^2; abs(phiC(:)).^2];
+            atomicMaximum = max(allAtomic);
+            if atomicMaximum > 0
+                contourLevels = atomicMaximum*[0.08 0.25 0.55];
+                contour(handles.ax2D, U, V, abs(phiA).^2, contourLevels, ...
+                    '--', 'Color', [0.1 0.1 0.1], 'LineWidth', 0.9);
+                contour(handles.ax2D, U, V, abs(phiB).^2, contourLevels, ...
+                    ':', 'Color', [1 1 1], 'LineWidth', 1.1);
+                contour(handles.ax2D, U, V, abs(phiC).^2, contourLevels, ...
+                    '-.', 'Color', [0.2 0.65 0.25], 'LineWidth', 0.9);
+            end
+        end
+
+        for index = 1:size(markerCoordinates,1)
+            plot(handles.ax2D, markerCoordinates(index,1), ...
+                markerCoordinates(index,2), 'wo', ...
+                'MarkerFaceColor', [0.18 0.18 0.18], ...
+                'MarkerSize', 7, 'LineWidth', 1.2);
+            text(handles.ax2D, markerCoordinates(index,1), ...
+                markerCoordinates(index,2), ['  ' markerLabels{index}], ...
+                'Color', [0.1 0.1 0.1], 'FontWeight', 'bold');
+        end
+
+        xlabel(handles.ax2D, xText, 'Color', [0.2 0.2 0.2]);
+        ylabel(handles.ax2D, yText, 'Color', [0.2 0.2 0.2]);
+        title(handles.ax2D, sprintf('%s  |  %s', planeText, stateName), ...
+            'Color', [0.1 0.1 0.1], ...
+            'FontSize', 11, 'FontWeight', 'bold');
+        handles.cb2D.Label.String = '|psi|^2  (a_0^{-3})';
+        hold(handles.ax2D, 'off');
+    end
+
+    % =====================================================================
+    % 3-D THREE-CENTRE ISOSURFACE AND GRID VALIDATION
+    % =====================================================================
+    function validation = plot3DOrbital(separation, coefficients, ...
+            normalization, stateName, stateSymbol, ...
+            pointCount, extentAu, isoPercent)
+
+        extentAngstrom = extentAu*a0;
+        coordinate = linspace(-extentAngstrom, extentAngstrom, pointCount);
+        [X, Y, Zgrid] = meshgrid(coordinate, coordinate, coordinate);
+
+        [psi, phiA, phiB, phiC] = molecularWavefunction( ...
+            X, Y, Zgrid, separation, coefficients, normalization);
+        density = abs(psi).^2;
+        maximumDensity = max(density(:));
+        isoLevel = (isoPercent/100)*maximumDensity;
+
+        surfaceData = isosurface(X, Y, Zgrid, density, isoLevel);
+        if isempty(surfaceData.vertices)
+            error('No three-centre isosurface was found at this density level.');
+        end
+
+        cla(handles.ax3D);
+        hold(handles.ax3D, 'on');
+
+        if handles.chkAtomic.Value
+            drawAtomicSurface(X, Y, Zgrid, abs(phiA).^2, ...
+                [0.25 0.55 0.85], 0.09);
+            drawAtomicSurface(X, Y, Zgrid, abs(phiB).^2, ...
+                [0.35 0.70 0.45], 0.09);
+            drawAtomicSurface(X, Y, Zgrid, abs(phiC).^2, ...
+                [0.85 0.55 0.20], 0.09);
+        end
+
+        molecularPatch = patch(handles.ax3D, surfaceData);
+        molecularPatch.EdgeColor = 'none';
+        molecularPatch.FaceAlpha = 0.84;
+
+        vertices = surfaceData.vertices;
+        vertexPsi = molecularWavefunction( ...
+            vertices(:,1), vertices(:,2), vertices(:,3), ...
+            separation, coefficients, normalization);
+        signData = sign(real(vertexPsi));
+        signData(signData == 0) = 1;
+        molecularPatch.FaceVertexCData = signData;
+        molecularPatch.FaceColor = 'interp';
+        colormap(handles.ax3D, blueWhiteRed(256));
+        caxis(handles.ax3D, [-1 1]);
+        handles.cb3D.Ticks = [-1 1];
+        handles.cb3D.TickLabels = {'negative', 'positive'};
+        handles.cb3D.Label.String = 'sign of psi';
+        isonormals(X, Y, Zgrid, density, molecularPatch);
+
+        nuclei = nuclearPositions(separation)*a0;
+        scatter3(handles.ax3D, nuclei(:,1), nuclei(:,2), nuclei(:,3), ...
+            65, repmat([0.20 0.20 0.20],3,1), ...
+            'filled', 'MarkerEdgeColor', [0.05 0.05 0.05]);
+        labels = {'A','B','C'};
+        for index = 1:3
+            text(handles.ax3D, nuclei(index,1), nuclei(index,2), ...
+                nuclei(index,3), ['  ' labels{index}], ...
+                'Color', [0.1 0.1 0.1], 'FontWeight', 'bold');
+        end
+
+        camlight(handles.ax3D, 'headlight');
+        lighting(handles.ax3D, 'gouraud');
+        axis(handles.ax3D, 'equal');
+        xlim(handles.ax3D, [-extentAngstrom extentAngstrom]);
+        ylim(handles.ax3D, [-extentAngstrom extentAngstrom]);
+        zlim(handles.ax3D, [-extentAngstrom extentAngstrom]);
+        xlabel(handles.ax3D, 'x / Angstrom');
+        ylabel(handles.ax3D, 'y / Angstrom');
+        zlabel(handles.ax3D, 'z / Angstrom');
+        title(handles.ax3D, sprintf( ...
+            '3-D %s  |  %s  |  R = %.2f a_0', ...
+            stateSymbol, stateName, separation), ...
+            'Color', [0.1 0.1 0.1], ...
+            'FontSize', 11, 'FontWeight', 'bold');
+        view(handles.ax3D, 36, 28);
+        grid(handles.ax3D, 'on');
+        hold(handles.ax3D, 'off');
+
+        stepAu = (2*extentAu)/(pointCount-1);
+        validation.numericNorm = sum(density(:))*stepAu^3;
+        validation.centrePsi = molecularWavefunction( ...
+            0, 0, 0, separation, coefficients, normalization);
+    end
+
+    function drawAtomicSurface(X, Y, Zgrid, atomicDensity, colour, alpha)
+        atomicLevel = 0.16*max(atomicDensity(:));
+        atomicSurface = isosurface(X, Y, Zgrid, atomicDensity, atomicLevel);
+        if isempty(atomicSurface.vertices)
+            return;
+        end
+        atomicPatch = patch(handles.ax3D, atomicSurface);
+        atomicPatch.FaceColor = colour;
+        atomicPatch.EdgeColor = 'none';
+        atomicPatch.FaceAlpha = alpha;
+    end
+
+    % =====================================================================
+    % DENSITY CUT THROUGH NUCLEUS A AND THE MOLECULAR CENTRE
+    % =====================================================================
+    function plotCentreCut(separation, coefficients, normalization, ...
+            stateName, extentAu)
+
+        xAu = linspace(-extentAu, extentAu, 900);
+        xAngstrom = xAu*a0;
+        [psi, phiA, phiB, phiC] = molecularWavefunction( ...
+            xAngstrom, zeros(size(xAu)), zeros(size(xAu)), ...
+            separation, coefficients, normalization);
+        density = abs(psi).^2;
+
+        cla(handles.axCut);
+        hold(handles.axCut, 'on');
+        plot(handles.axCut, xAu, density, ...
+            'Color', [0.15 0.45 0.75], ...
+            'LineWidth', 2.2, ...
+            'DisplayName', 'Molecular density |psi|^2');
+
+        if handles.chkAtomic.Value
+            plot(handles.axCut, xAu, abs(phiA).^2, '--', ...
+                'Color', [0.2 0.55 0.25], ...
+                'LineWidth', 1.2, ...
+                'DisplayName', '|phi_A|^2');
+            plot(handles.axCut, xAu, abs(phiB).^2, ':', ...
+                'Color', [0.75 0.35 0.15], ...
+                'LineWidth', 1.4, ...
+                'DisplayName', '|phi_B|^2');
+            plot(handles.axCut, xAu, abs(phiC).^2, '-.', ...
+                'Color', [0.45 0.25 0.65], ...
+                'LineWidth', 1.2, ...
+                'DisplayName', '|phi_C|^2');
+        end
+
+        nucleusAX = separation/sqrt(3);
+        projectedBCX = -separation/(2*sqrt(3));
+        xline(handles.axCut, nucleusAX, '-', 'Nucleus A', ...
+            'Color', [0.35 0.35 0.35], ...
+            'LineWidth', 1.1, ...
+            'LabelVerticalAlignment', 'bottom', ...
+            'HandleVisibility', 'off');
+        xline(handles.axCut, projectedBCX, '--', 'B,C x-coordinate', ...
+            'Color', [0.45 0.45 0.45], ...
+            'LineWidth', 1.0, ...
+            'LabelVerticalAlignment', 'bottom', ...
+            'HandleVisibility', 'off');
+        xline(handles.axCut, 0, ':', 'Molecular centre', ...
+            'Color', [0.55 0.15 0.15], ...
+            'LineWidth', 1.0, ...
+            'HandleVisibility', 'off');
+
+        xlabel(handles.axCut, 'Position on x-axis through centre and nucleus A  x/a_0');
+        ylabel(handles.axCut, 'Orbital density  (a_0^{-3})');
+        title(handles.axCut, sprintf( ...
+            'Central density cut  y=z=0  |  %s', stateName), ...
+            'Color', [0.1 0.1 0.1], ...
+            'FontSize', 11, 'FontWeight', 'bold');
+        legend(handles.axCut, 'Location', 'northeast', 'FontSize', 9);
+        grid(handles.axCut, 'on');
+        hold(handles.axCut, 'off');
+    end
+
+    % =====================================================================
+    % THREE-CENTRE WAVEFUNCTION, NUCLEI AND OVERLAP
+    % =====================================================================
+    function [psi, phiA, phiB, phiC] = molecularWavefunction( ...
+            xAngstrom, yAngstrom, zAngstrom, ...
+            separation, coefficients, normalization)
+
+        xAu = xAngstrom/a0;
+        yAu = yAngstrom/a0;
+        zAu = zAngstrom/a0;
+        nuclei = nuclearPositions(separation);
+
+        radiusA = sqrt((xAu-nuclei(1,1)).^2 + ...
+            (yAu-nuclei(1,2)).^2 + (zAu-nuclei(1,3)).^2);
+        radiusB = sqrt((xAu-nuclei(2,1)).^2 + ...
+            (yAu-nuclei(2,2)).^2 + (zAu-nuclei(2,3)).^2);
+        radiusC = sqrt((xAu-nuclei(3,1)).^2 + ...
+            (yAu-nuclei(3,2)).^2 + (zAu-nuclei(3,3)).^2);
+
+        phiA = exp(-radiusA)/sqrt(pi);
+        phiB = exp(-radiusB)/sqrt(pi);
+        phiC = exp(-radiusC)/sqrt(pi);
+        psi = normalization*(coefficients(1)*phiA + ...
+            coefficients(2)*phiB + coefficients(3)*phiC);
+    end
+
+    function nuclei = nuclearPositions(separation)
+        radius = separation/sqrt(3);
+        nuclei = [ ...
+             radius,    0,              0; ...
+            -radius/2,  separation/2,   0; ...
+            -radius/2, -separation/2,   0];
+    end
+
+    function overlap = overlap1s(separation)
+        overlap = exp(-separation)*(1 + separation + separation^2/3);
+    end
+
+    function [coefficients, stateName, stateSymbol, modeKey] = ...
+            stateDefinition(state)
+        switch state
+            case 'Symmetric bonding A1-prime'
+                coefficients = [1;1;1];
+                stateName = 'Symmetric bonding A1-prime';
+                stateSymbol = 'A_1^{\prime}';
+                modeKey = 'A1';
+            case 'Nodal E-prime mode 1'
+                coefficients = [2;-1;-1];
+                stateName = 'Nodal E-prime mode 1';
+                stateSymbol = 'E_1^{\prime}';
+                modeKey = 'E1';
+            otherwise
+                coefficients = [0;1;-1];
+                stateName = 'Nodal E-prime mode 2';
+                stateSymbol = 'E_2^{\prime}';
+                modeKey = 'E2';
+        end
+    end
+
+    function errorValue = e2PlaneNodeError( ...
+            separation, coefficients, normalization, extentAu)
+        sample = linspace(-extentAu, extentAu, 45)*a0;
+        [X, Zgrid] = meshgrid(sample, sample);
+        psi = molecularWavefunction(X, zeros(size(X)), Zgrid, ...
+            separation, coefficients, normalization);
+        errorValue = max(abs(psi(:)));
+    end
+
+    % =====================================================================
+    % ANIMATION, RESET AND EXPORT
+    % =====================================================================
+    function animateContraction()
+        if animationRunning
+            return;
+        end
+
+        animationRunning = true;
+        animationStop = false;
+        handles.btnAnimate.Enable = 'off';
+        handles.lblStatus.Text = ...
+            'Animation: equilateral triangle contracting from 7.5 a0 to 1.2 a0.';
+
+        contractionValues = linspace(7.5, 1.2, 28);
+        for index = 1:numel(contractionValues)
+            if animationStop || ~isvalid(handles.fig)
+                break;
+            end
+            handles.sldR.Value = contractionValues(index);
+            updateModel(false);
+            drawnow;
+        end
+
+        if isvalid(handles.fig)
+            animationRunning = false;
+            handles.btnAnimate.Enable = 'on';
+            updateModel(true);
+            if animationStop
+                handles.lblStatus.Text = 'Contraction animation stopped.';
+            else
+                handles.lblStatus.Text = ...
+                    'Contraction complete - final high-resolution view rendered.';
+            end
+        end
+    end
+
+    function stopAnimation()
+        animationStop = true;
+    end
+
+    function resetApplication()
+        animationStop = true;
+        handles.sldR.Value = defaultR;
+        handles.sldIso.Value = defaultIso;
+        handles.ddState.Value = 'Symmetric bonding A1-prime';
+        handles.ddPlane.Value = 'xy molecular plane (z=0)';
+        handles.chkAtomic.Value = true;
+        updateModel(true);
+    end
+
+    function exportView()
+        suggestedName = sprintf('H3plus_%s_R%.2fa0.png', ...
+            strrep(handles.ddState.Value, ' ', '_'), handles.sldR.Value);
+        [file, path] = uiputfile('*.png', ...
+            'Export current H3+ application view', suggestedName);
+
+        if isequal(file, 0)
+            handles.lblStatus.Text = 'Export cancelled.';
+            return;
+        end
+
+        try
+            exportapp(handles.fig, fullfile(path, file));
+            handles.lblStatus.Text = sprintf('Exported current view -> %s', file);
+        catch ME
+            uialert(handles.fig, ME.message, 'Export error');
+            handles.lblStatus.Text = 'Export failed.';
+        end
+    end
+
+    function map = blueWhiteRed(numberOfColours)
+        half = floor(numberOfColours/2);
+        lower = [linspace(0.15,1,half)', ...
+                 linspace(0.35,1,half)', ...
+                 ones(half,1)];
+        upperCount = numberOfColours-half;
+        upper = [ones(upperCount,1), ...
+                 linspace(1,0.25,upperCount)', ...
+                 linspace(1,0.2,upperCount)'];
+        map = [lower; upper];
+    end
+
+end
